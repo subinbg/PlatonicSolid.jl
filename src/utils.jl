@@ -9,8 +9,8 @@ end
 Counter-clockwise rotation matrix w.r.t. to an axis    
 Ref: Eq. (20), http://scipp.ucsc.edu/~haber/ph216/rotation_12.pdf
 """
-function rotation_matrix(axis::AbstractVector, angle; type::Type{T}=Float64) where T
-    @assert length(axis) == 3 "Wrong axis: $axis"
+function rotation_matrix(::Type{T}, axis, angle) where T
+    @assert (length(axis) == 3) && prod(axis) >= 0 "Wrong axis: $axis"
 
     nv = axis ./ sqrt(sum(axis.^2))
     cos_t = cos(angle)
@@ -86,13 +86,24 @@ function line_plane_intersection(p_l1::Vector, p_l2::Vector, p_on_pl::Vector, p_
     return p_l2
 end
 
-function check_inside(point::Vector, vertices::Matrix)
-    origin = similar(point)
-    fill!(origin, 0)
+function check_inside(x1,x2,x3,vertices)
 
-    p_normal = sum(vertices, dims=2) / size(vertices, 2)
-    p_on_pl = vertices[:,1]
+    a1 = vertices[1,1] - vertices[1,2]
+    a2 = vertices[2,1] - vertices[2,2]
+    a3 = vertices[3,1] - vertices[3,2]
 
-    intersection = line_plane_intersection(origin, point, p_on_pl, p_normal)
-    sqrt(sum(point.^2)) <= sqrt(sum(intersection.^2))
+    b1 = vertices[1,1] - vertices[1,3]
+    b2 = vertices[2,1] - vertices[2,3]
+    b3 = vertices[3,1] - vertices[3,3]
+
+    # n = a × b
+    n1 = a2*b3 - a3*b2
+    n2 = a3*b1 - a1*b3
+    n3 = a1*b2 - a2*b1
+
+    # n ⋅ a = D
+    D = n1*vertices[1,1] + n2*vertices[2,1] + n3*vertices[3,1]
+
+    # https://math.stackexchange.com/a/2607180/274177
+    (-D) * ((n1*x1 + n2*x2 + n3*x3)-D) >= 0 
 end

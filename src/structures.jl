@@ -112,54 +112,71 @@ function icosa(radius)
     phi = 26.56505 * π / 180 
 
     vertices = Matrix{Float64}(undef, 3, 12)
+    vertices[:,1] = [0,0,radius]
+    vertices[:,12] = [0,0,-radius]
     theta = 0.0
-    for idx in 1:6
+    for idx in 2:6
         sph_coord!(view(vertices,:,idx), radius, theta, phi)
-        sph_coord!(view(vertices,:,idx+6), radius, theta+36*π/180, -phi)
+        theta += 72*π/180
+    end
+    theta = 36*π/180
+    for idx in 7:11
+        sph_coord!(view(vertices,:,idx), radius, theta, -phi)
         theta += 72*π/180
     end
     faces = transform_face_idx(_icosa_faces)
     return vertices, faces
 end
 
-function generate(poly::Union{Symbol,Int}, ::Type{T}, N::Int, radius;
-    translation::Vector=[0,0,0], axis::Vector=[1,0,0], angle=0.0) where T
+
+function generate!(poly::Union{Int,Symbol}, voxel::Array{T,3}, radius; translation::Vector=[0,0,0], axis::Matrix=[0 0 1;], angle::Vector=[0]) where T
+
+    rmtx::Matrix{T} = [1 0 0; 0 1 0; 0 0 1]
+    for idx in eachindex(angle)
+        rmtx *= rotation_matrix(T, view(axis,idx,:), angle[idx])
+    end
+
+    generate!(poly, voxel, radius, translation, rmtx)
+end
+
+function generate!(poly::Union{Int,Symbol}, voxel::Array{T,3}, radius, translation::Vector, rmtx::Matrix) where T
 
     @assert 0.0 <= radius <= 1.0 "Radius should be in [0,1]"
+    @assert all(-0.5 .<= translation .<= 0.5) "Translation should be in [-0.5,0.5]"
+    @assert all(size(voxel) .== ones(Int,3) .* size(voxel,1)) "Number of pixels in `voxel` should be same in all dimensions"
+
+    N = size(voxel,1)
     radius_N = radius * N
+    translation_N = translation .* N
+
     shape = get_shape(poly)
     @eval func = $shape
-    vertices, faces = func(radius_N)
-    rmtx = rotation_matrix(axis, angle, type=T)
-
-    generate(T, N, faces, vertices, translation, rmtx)
-end
-
-function generate(::Type{T}, N::Int, 
-    faces::Matrix, vertices::Matrix, 
-    translation::Vector, rmtx::Matrix) where T
-
+    vertices::Matrix{T}, faces::Matrix{Int} = func(radius_N)
     vertices_rot = rmtx*vertices
-    generate(T, N, faces, vertices_rot, translation)
+    _generate!(voxel, faces, vertices_rot, translation_N)
 end
 
-function generate(::Type{T}, N::Int, 
-    faces::Matrix, vertices::Matrix, translation::Vector) where T
+function _generate!(voxel::Array{T,3}, faces::Matrix, vertices::Matrix, translation::Vector) where T
 
-    planedist = planeDistance(faces, vertices)
-    polyhedron = ones(T, N, N, N)
+    N = size(voxel,1)
+    fill!(voxel, one(T))
+    _zero = zero(T)
+
+    t1 = translation[1]
+    t2 = translation[2]
+    t3 = translation[3]
 
     @inbounds for x3 in 1:N # @simd 
-        x3r = x3 - 1 - N÷2 + translation[3]
+        x3r = x3 - 1 - N÷2 + t3
         for x2 in 1:N
-            x2r = x2 - 1 - N÷2 + translation[2]
+            x2r = x2 - 1 - N÷2 + t2
             for x1 in 1:N
-                x1r = x1 - 1 - N÷2 + translation[1]
+                x1r = x1 - 1 - N÷2 + t1
                 
                 for f in 1:size(faces,2)
-                    vertices_face = vertices[:,faces[:,f]]
-                    if ~check_inside([x1r,x2r,x3r], vertices_face)
-                        polyhedron[x1,x2,x3] = zero(T)
+                    vertices_face = view(vertices,:,view(faces,:,f))
+                    if ~check_inside(x1r,x2r,x3r,vertices_face)
+                        voxel[x1,x2,x3] = _zero
                         break
                     end
                 end
@@ -167,5 +184,5 @@ function generate(::Type{T}, N::Int,
         end
     end
 
-    return polyhedron
+    return voxel
 end
